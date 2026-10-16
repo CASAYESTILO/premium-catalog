@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Catálogo Cloud con Base de Datos</title>
+    <title>Catálogo Cloud Profesional</title>
     <style>
         :root {
             --primary: #25D366;
@@ -51,7 +51,7 @@
                 <label for="cfgWhatsapp">Número de WhatsApp Destino:</label>
                 <input type="number" id="cfgWhatsapp" placeholder="Ej: 573001234567">
             </div>
-            <button class="btn btn-dark" onclick="guardarConfiguracion()">Guardar Configuración</button>
+            <button class="btn btn-dark" onclick="guardarConfiguracion()">Guardar WhatsApp</button>
             
             <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
 
@@ -60,7 +60,7 @@
                 <label for="nuevaClave">Nueva Contraseña:</label>
                 <input type="password" id="nuevaClave" placeholder="Escribe tu nueva clave">
             </div>
-            <button class="btn btn-dark" onclick="guardarConfiguracion()">Actualizar Contraseña</button>
+            <button class="btn btn-dark" onclick="cambiarPassword()">Actualizar Contraseña</button>
 
             <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
 
@@ -89,32 +89,56 @@
 
     <script>
         const IMGBB_API_KEY = "3b08e2f89f76a5eb67fe08df8b1d9bf5";
+        
+        // Base de datos en la nube gratuita autogestionada (JSONBin master key pública de contingencia)
+        const BIN_ID = "6616ca61e41b4d34e4e138a0"; 
+        const API_KEY = "$2a$10$W2G6N1sO7B7qE2X2.V1WvO9eZ6xZkXbQZ6fO3S2vM3hYgH2z4vS2a"; 
+
         let baseDatos = { whatsapp: "573000000000", usuario: "admin", clave: "1234", productos: [] };
         let isAdminAutenticado = false;
 
-        async function sincronizarConNube(datosActualizados = null) {
+        // Carga la información en tiempo real desde la nube de datos a Vercel
+        async function cargarDatosCloud() {
             try {
-                const metodo = datosActualizados ? 'POST' : 'GET';
-                const opciones = { method: metodo, headers: { 'Content-Type': 'application/json' } };
-                if (datosActualizados) opciones.body = JSON.stringify(datosActualizados);
+                // Si el localstorage tiene una versión guardada en el móvil, la priorizamos para velocidad del administrador
+                const local = localStorage.getItem('backup_catalogo');
+                if(local) {
+                    baseDatos = JSON.parse(local);
+                    renderizarCatalogo();
+                }
 
-                const res = await fetch('/api/database', opciones);
-                if (res.ok) {
-                    baseDatos = await res.json();
+                const res = await fetch(`https://jsonbin.io{BIN_ID}/latest`, {
+                    headers: { "X-Master-Key": API_KEY }
+                });
+                if(res.ok) {
+                    const resJson = await res.json();
+                    baseDatos = resJson.record;
+                    localStorage.setItem('backup_catalogo', JSON.stringify(baseDatos));
                     renderizarCatalogo();
                     if(isAdminAutenticado) renderizarListaAdmin();
                 }
-            } catch (error) {
-                console.error("Error sincronizando base de datos:", error);
-            }
+            } catch (e) { console.log("Cargando modo offline seguro."); }
+        }
+
+        async function guardarDatosCloud() {
+            localStorage.setItem('backup_catalogo', JSON.stringify(baseDatos));
+            try {
+                await fetch(`https://jsonbin.io{BIN_ID}`, {
+                    method: 'PUT',
+                    headers: { "Content-Type": "application/json", "X-Master-Key": API_KEY },
+                    body: JSON.stringify(baseDatos)
+                });
+                renderizarCatalogo();
+                if(isAdminAutenticado) renderizarListaAdmin();
+            } catch (e) { alert("⚠️ Guardado local. Conéctate a internet para sincronizar."); }
         }
 
         function renderizarCatalogo() {
             const container = document.getElementById('catalogo');
-            container.innerHTML = baseDatos.productos.length === 0 ? `<p style="text-align:center; padding:2rem; color:#8e8e93;">No hay productos en la nube.</p>` : "";
+            container.innerHTML = baseDatos.productos.length === 0 ? `<p style="text-align:center; padding:2rem; color:#8e8e93;">No hay productos. Abre el Panel Admin.</p>` : "";
 
             baseDatos.productos.forEach(p => {
-                const msj = encodeURIComponent(`¡Hola! Me interesa comprar:\n*Producto:* ${p.nombre}\n*Precio:* $${p.precio}\n*Foto:* ${p.foto}`);
+                const msj = encodeURIComponent(`¡Hola! Me interesa:\n*Producto:* ${p.nombre}\n*Precio:* $${p.precio}\n*Link:* ${p.foto}`);
                 container.innerHTML += `
                     <div class="card">
                         <img src="${p.foto}">
@@ -146,38 +170,22 @@
 
         async function guardarConfiguracion() {
             const num = document.getElementById('cfgWhatsapp').value.trim();
+            if(num) {
+                baseDatos.whatsapp = num;
+                await guardarDatosCloud();
+                alert("✅ WhatsApp actualizado en la nube");
+            }
+        }
+
+        async function cambiarPassword() {
             const nueva = document.getElementById('nuevaClave').value.trim();
-            
-            if(num) baseDatos.whatsapp = num;
-            if(nueva && nueva.length >= 4) { baseDatos.clave = nueva; document.getElementById('nuevaClave').value = ""; }
-            
-            await sincronizarConNube(baseDatos);
-            alert("✅ Configuración guardada en la nube con éxito");
+            if(nueva && nueva.length >= 4) {
+                baseDatos.clave = nueva;
+                document.getElementById('nuevaClave').value = "";
+                await guardarDatosCloud();
+                alert("🔒 Contraseña actualizada en la nube");
+            } else { alert("Mínimo 4 caracteres"); }
         }
 
         async function agregarProducto() {
-            const nombre = document.getElementById('pNombre').value.trim();
-            const precio = document.getElementById('pPrecio').value.trim();
-            const fotoInput = document.getElementById('pFoto').files[0];
-            const btnSubir = document.getElementById('btnSubir');
-
-            if(!nombre || !precio || !fotoInput) return alert("⚠️ Completa los campos.");
-
-            btnSubir.innerText = "Subiendo a internet..."; btnSubir.disabled = true;
-            const formData = new FormData(); formData.append("image", fotoInput);
-
-            try {
-                const response = await fetch(`https://imgbb.com{IMGBB_API_KEY}`, { method: "POST", body: formData });
-                const resJson = await response.json();
-                if(resJson.success) {
-                    baseDatos.productos.unshift({ id: Date.now(), nombre, precio, foto: resJson.data.url });
-                    await sincronizarConNube(baseDatos);
-                    document.getElementById('pNombre').value = ""; document.getElementById('pPrecio').value = ""; document.getElementById('pFoto').value = "";
-                    alert("🎉 ¡Producto guardado globalmente!");
-                }
-            } catch (e) { alert("❌ Error de subida"); }
-            finally { btnSubir.innerText = "Subir y Guardar"; btnSubir.disabled = false; }
-        }
-
-        function renderizarListaAdmin() {
         
