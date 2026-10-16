@@ -38,7 +38,7 @@
 
         /* --- PANEL DE ADMINISTRACIÓN --- */
         .admin-panel { background: #ffffff; border-radius: 12px; padding: 1.5rem; margin-top: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none; border: 2px solid var(--dark); }
-        .form-group { margin-bottom: 12rem; }
+        .form-group { margin-bottom: 1.2rem; }
         .form-group label { display: block; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.9rem; }
         .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 1rem; background: #fafafa; }
         
@@ -60,13 +60,26 @@
         <div id="panelAdmin" class="admin-panel">
             <h2 style="margin-bottom: 1rem; font-size: 1.4rem;">⚙️ Configuración del Catálogo</h2>
             
+            <!-- Configurar WhatsApp -->
             <div class="form-group">
                 <label for="cfgWhatsapp">Número de WhatsApp Destino (Con código de país, ej: 573001234567):</label>
                 <input type="number" id="cfgWhatsapp" placeholder="Ej: 573001234567">
             </div>
             <button class="btn btn-dark" onclick="guardarWhatsapp()">Guardar Teléfono</button>
+            
             <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
 
+            <!-- Cambiar Clave de Acceso -->
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">🔐 Cambiar Contraseña</h3>
+            <div class="form-group">
+                <label for="nuevaClave">Nueva Contraseña Administrativa:</label>
+                <input type="password" id="nuevaClave" placeholder="Escribe tu nueva clave">
+            </div>
+            <button class="btn btn-dark" onclick="cambiarPassword()">Actualizar Contraseña</button>
+
+            <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
+
+            <!-- Agregar Productos -->
             <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">📦 Agregar Nuevo Producto</h3>
             <div class="form-group">
                 <label for="pNombre">Nombre del Producto:</label>
@@ -92,16 +105,18 @@
     </div>
 
     <script>
-        // Inicializar datos guardados en la memoria del celular
-        let baseDatos = JSON.parse(localStorage.getItem('catalogo_data')) || {
+        // Inicializar datos guardados en la memoria del celular con valores de fábrica obligatorios
+        let baseDatos = JSON.parse(localStorage.getItem('catalogo_data_v2')) || {
             whatsapp: "573000000000",
+            usuario: "admin",
+            clave: "1234",
             productos: []
         };
 
         let isAdminAutenticado = false;
 
         function guardarEnAlmacenamiento() {
-            localStorage.setItem('catalogo_data', JSON.stringify(baseDatos));
+            localStorage.setItem('catalogo_data_v2', JSON.stringify(baseDatos));
         }
 
         // Mostrar productos en pantalla
@@ -132,20 +147,25 @@
             });
         }
 
-        // Autenticación con contraseña 1234
+        // Autenticación con Usuario y Contraseña
         function toggleAdmin() {
             const panel = document.getElementById('panelAdmin');
             
             if (!isAdminAutenticado) {
-                const clave = prompt("Introduce la clave de administración:");
-                if (clave === "1234") {
+                const userInput = prompt("Introduce el usuario de administración:");
+                if (userInput === null) return; // Cancelado
+                
+                const claveInput = prompt("Introduce la contraseña de administración:");
+                if (claveInput === null) return; // Cancelado
+
+                if (userInput === baseDatos.usuario && claveInput === baseDatos.clave) {
                     isAdminAutenticado = true;
                     panel.style.display = "block";
                     document.getElementById('cfgWhatsapp').value = baseDatos.whatsapp;
                     renderizarListaAdmin();
                     window.scrollTo({ top: panel.offsetTop, behavior: 'smooth' });
-                } else if(clave !== null) {
-                    alert("❌ Clave incorrecta");
+                } else {
+                    alert("❌ Usuario o contraseña incorrectos");
                 }
             } else {
                 panel.style.display = panel.style.display === "none" ? "block" : "none";
@@ -161,48 +181,22 @@
             renderizarCatalogo();
         }
 
+        // Función nueva para cambiar el password desde el panel
+        function cambiarPassword() {
+            const nueva = document.getElementById('nuevaClave').value.trim();
+            if(!nueva || nueva.length < 4) {
+                return alert("⚠️ La contraseña debe tener al menos 4 caracteres.");
+            }
+            baseDatos.clave = nueva;
+            guardarEnAlmacenamiento();
+            document.getElementById('nuevaClave').value = "";
+            alert("🔒 Contraseña cambiada con éxito. Usa tu nueva clave la próxima vez.");
+        }
+
         // Procesar foto de galería/cámara y guardar producto
         function agregarProducto() {
             const nombre = document.getElementById('pNombre').value.trim();
             const precio = document.getElementById('pPrecio').value.trim();
             const fotoInput = document.getElementById('pFoto').files;
 
-            if(!nombre || !precio || fotoInput.length === 0) {
-                return alert("⚠️ Por favor completa todos los campos y selecciona una imagen.");
-            }
-
-            const reader = new FileReader();
-            reader.onloadend = function() {
-                baseDatos.productos.push({
-                    id: Date.now(),
-                    nombre: nombre,
-                    precio: precio,
-                    foto: reader.result
-                });
-                
-                guardarEnAlmacenamiento();
-                renderizarCatalogo();
-                renderizarListaAdmin();
-                
-                document.getElementById('pNombre').value = "";
-                document.getElementById('pPrecio').value = "";
-                document.getElementById('pFoto').value = "";
-                alert("🎉 Producto añadido correctamente");
-            }
-            reader.readAsDataURL(fotoInput[0]);
-        }
-
-        function renderizarListaAdmin() {
-            const lista = document.getElementById('listaAdminProductos');
-            lista.innerHTML = "";
-            baseDatos.productos.forEach((p, index) => {
-                lista.innerHTML += `
-                    <div class="admin-product-item">
-                        <span><strong>${p.nombre}</strong> - $${Number(p.precio).toLocaleString()}</span>
-                        <button class="btn btn-danger" style="width:auto; margin:0; padding:0.4rem 0.8rem;" onclick="eliminarProducto(${index})">Eliminar</button>
-                    </div>
-                `;
-            });
-        }
-
-
+        
