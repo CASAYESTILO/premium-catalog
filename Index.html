@@ -1,1 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Catálogo Móvil Profesional</title>
+    <style>
+        :root {
+            --primary: #25D366;
+            --dark: #121212;
+            --light: #f4f4f9;
+            --card-bg: #ffffff;
+            --text: #333333;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: var(--light); color: var(--text); padding-bottom: 4rem; }
+        
+        header { background: var(--dark); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
+        .logo { font-size: 1.3rem; font-weight: bold; }
+        
+        .container { max-width: 600px; margin: 0 auto; padding: 1rem; }
+        
+        /* --- BOTONES --- */
+        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.6rem 1rem; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 0.9rem; gap: 0.5rem; width: 100%; margin-bottom: 0.5rem; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-dark { background: var(--dark); color: white; }
+        .btn-danger { background: #ff3b30; color: white; }
+        .btn-download { background: #0076ff; color: white; }
+
+        /* --- CATÁLOGO DE PRODUCTOS --- */
+        .grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1rem; }
+        .card { background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e5e5ea; display: flex; flex-direction: column; }
+        .card img { width: 100%; height: 250px; object-fit: cover; background: #e5e5ea; }
+        .card-body { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .card-title { font-size: 1.2rem; font-weight: bold; color: var(--dark); }
+        .card-price { font-size: 1.4rem; font-weight: 800; color: #0076ff; }
+
+        /* --- PANEL DE ADMINISTRACIÓN --- */
+        .admin-panel { background: #ffffff; border-radius: 12px; padding: 1.5rem; margin-top: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none; border: 2px solid var(--dark); }
+        .form-group { margin-bottom: 12rem; }
+        .form-group label { display: block; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.9rem; }
+        .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 1rem; background: #fafafa; }
+        
+        .admin-product-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid #e5e5ea; }
+
+        @media(min-width: 480px) { .grid { grid-template-columns: 1fr 1fr; } }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">📱 Mi Catálogo</div>
+        <button class="btn btn-dark" style="width: auto; margin: 0;" onclick="toggleAdmin()">Panel Admin</button>
+    </header>
+
+    <div class="container">
+        
+        <!-- Panel Admin (Oculto por defecto) -->
+        <div id="panelAdmin" class="admin-panel">
+            <h2 style="margin-bottom: 1rem; font-size: 1.4rem;">⚙️ Configuración del Catálogo</h2>
+            
+            <div class="form-group">
+                <label for="cfgWhatsapp">Número de WhatsApp Destino (Con código de país, ej: 573001234567):</label>
+                <input type="number" id="cfgWhatsapp" placeholder="Ej: 573001234567">
+            </div>
+            <button class="btn btn-dark" onclick="guardarWhatsapp()">Guardar Teléfono</button>
+            <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
+
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">📦 Agregar Nuevo Producto</h3>
+            <div class="form-group">
+                <label for="pNombre">Nombre del Producto:</label>
+                <input type="text" id="pNombre" placeholder="Ej: Camiseta Oversize">
+            </div>
+            <div class="form-group">
+                <label for="pPrecio">Precio ($):</label>
+                <input type="number" id="pPrecio" placeholder="Ej: 25000">
+            </div>
+            <div class="form-group">
+                <label for="pFoto">Foto del Producto (Cámara o Galería):</label>
+                <input type="file" id="pFoto" accept="image/*">
+            </div>
+            <button class="btn btn-primary" onclick="agregarProducto()">Añadir al Catálogo</button>
+
+            <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
+            <h3 style="margin-bottom: 0.5rem; font-size: 1.2rem;">🗑️ Gestionar Existentes</h3>
+            <div id="listaAdminProductos"></div>
+        </div>
+
+        <!-- Catálogo Público -->
+        <div id="catalogo" class="grid"></div>
+    </div>
+
+    <script>
+        // Inicializar datos guardados en la memoria del celular
+        let baseDatos = JSON.parse(localStorage.getItem('catalogo_data')) || {
+            whatsapp: "573000000000",
+            productos: []
+        };
+
+        let isAdminAutenticado = false;
+
+        function guardarEnAlmacenamiento() {
+            localStorage.setItem('catalogo_data', JSON.stringify(baseDatos));
+        }
+
+        // Mostrar productos en pantalla
+        function renderizarCatalogo() {
+            const container = document.getElementById('catalogo');
+            container.innerHTML = "";
+            
+            if(baseDatos.productos.length === 0) {
+                container.innerHTML = `<p style="text-align:center; padding:2rem; color:#8e8e93;">Tu catálogo está vacío. Entra al Panel Admin para añadir productos.</p>`;
+                return;
+            }
+
+            baseDatos.productos.forEach(p => {
+                const mensajeWhatsapp = encodeURIComponent(`¡Hola! Me interesa comprar este producto:\n\n*Producto:* ${p.nombre}\n*Precio:* $${p.precio}`);
+                const urlWhatsapp = `https://wa.me{baseDatos.whatsapp}?text=${mensajeWhatsapp}`;
+
+                container.innerHTML += `
+                    <div class="card">
+                        <img src="${p.foto}" alt="${p.nombre}">
+                        <div class="card-body">
+                            <div class="card-title">${p.nombre}</div>
+                            <div class="card-price">$${Number(p.precio).toLocaleString()}</div>
+                            <a class="btn btn-primary" href="${urlWhatsapp}" target="_blank">💬 Pedir por WhatsApp</a>
+                            <button class="btn btn-download" onclick="descargarImagen('${p.foto}', '${p.nombre}')">📥 Descargar Foto</button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        // Autenticación con contraseña 1234
+        function toggleAdmin() {
+            const panel = document.getElementById('panelAdmin');
+            
+            if (!isAdminAutenticado) {
+                const clave = prompt("Introduce la clave de administración:");
+                if (clave === "1234") {
+                    isAdminAutenticado = true;
+                    panel.style.display = "block";
+                    document.getElementById('cfgWhatsapp').value = baseDatos.whatsapp;
+                    renderizarListaAdmin();
+                    window.scrollTo({ top: panel.offsetTop, behavior: 'smooth' });
+                } else if(clave !== null) {
+                    alert("❌ Clave incorrecta");
+                }
+            } else {
+                panel.style.display = panel.style.display === "none" ? "block" : "none";
+            }
+        }
+
+        function guardarWhatsapp() {
+            const num = document.getElementById('cfgWhatsapp').value.trim();
+            if(!num) return alert("Escribe un número válido");
+            baseDatos.whatsapp = num;
+            guardarEnAlmacenamiento();
+            alert("✅ Número de WhatsApp actualizado");
+            renderizarCatalogo();
+        }
+
+        // Procesar foto de galería/cámara y guardar producto
+        function agregarProducto() {
+            const nombre = document.getElementById('pNombre').value.trim();
+            const precio = document.getElementById('pPrecio').value.trim();
+            const fotoInput = document.getElementById('pFoto').files;
+
+            if(!nombre || !precio || fotoInput.length === 0) {
+                return alert("⚠️ Por favor completa todos los campos y selecciona una imagen.");
+            }
+
+            const reader = new FileReader();
+            reader.onloadend = function() {
+                baseDatos.productos.push({
+                    id: Date.now(),
+                    nombre: nombre,
+                    precio: precio,
+                    foto: reader.result
+                });
+                
+                guardarEnAlmacenamiento();
+                renderizarCatalogo();
+                renderizarListaAdmin();
+                
+                document.getElementById('pNombre').value = "";
+                document.getElementById('pPrecio').value = "";
+                document.getElementById('pFoto').value = "";
+                alert("🎉 Producto añadido correctamente");
+            }
+            reader.readAsDataURL(fotoInput[0]);
+        }
+
+        function renderizarListaAdmin() {
+            const lista = document.getElementById('listaAdminProductos');
+            lista.innerHTML = "";
+            baseDatos.productos.forEach((p, index) => {
+                lista.innerHTML += `
+                    <div class="admin-product-item">
+                        <span><strong>${p.nombre}</strong> - $${Number(p.precio).toLocaleString()}</span>
+                        <button class="btn btn-danger" style="width:auto; margin:0; padding:0.4rem 0.8rem;" onclick="eliminarProducto(${index})">Eliminar</button>
+                    </div>
+                `;
+            });
+        }
+
 
