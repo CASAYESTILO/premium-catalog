@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Catálogo Cloud con Panel Admin</title>
-    <!-- Configuración nativa para evitar Error 404 en plataformas como Vercel/Netlify -->
-    <meta name="vercel-routing" content="fallback-to-index">
+    <title>Catálogo Cloud con Base de Datos</title>
     <style>
         :root {
             --primary: #25D366;
@@ -14,38 +12,26 @@
             --card-bg: #ffffff;
             --text: #333333;
         }
-
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
         body { background-color: var(--light); color: var(--text); padding-bottom: 4rem; }
-        
         header { background: var(--dark); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
-        .logo { font-size: 1.3rem; font-weight: bold; }
-        
         .container { max-width: 600px; margin: 0 auto; padding: 1rem; }
-        
-        /* --- BOTONES --- */
         .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.6rem 1rem; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 0.9rem; gap: 0.5rem; width: 100%; margin-bottom: 0.5rem; }
         .btn-primary { background: var(--primary); color: white; }
         .btn-dark { background: var(--dark); color: white; }
         .btn-danger { background: #ff3b30; color: white; }
         .btn-download { background: #0076ff; color: white; }
-
-        /* --- CATÁLOGO DE PRODUCTOS --- */
         .grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1rem; }
         .card { background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e5e5ea; display: flex; flex-direction: column; }
         .card img { width: 100%; height: 250px; object-fit: cover; background: #e5e5ea; }
         .card-body { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
         .card-title { font-size: 1.2rem; font-weight: bold; color: var(--dark); }
         .card-price { font-size: 1.4rem; font-weight: 800; color: #0076ff; }
-
-        /* --- PANEL DE ADMINISTRACIÓN --- */
         .admin-panel { background: #ffffff; border-radius: 12px; padding: 1.5rem; margin-top: 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: none; border: 2px solid var(--dark); }
         .form-group { margin-bottom: 1.2rem; }
         .form-group label { display: block; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.9rem; }
         .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 1rem; background: #fafafa; }
-        
         .admin-product-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid #e5e5ea; }
-
         @media(min-width: 480px) { .grid { grid-template-columns: 1fr 1fr; } }
     </style>
 </head>
@@ -57,144 +43,141 @@
     </header>
 
     <div class="container">
-        
-        <!-- Panel Admin (Oculto por defecto) -->
+        <!-- Panel Admin -->
         <div id="panelAdmin" class="admin-panel">
-            <h2 style="margin-bottom: 1rem; font-size: 1.4rem;">⚙ nighttime; Panel Administrativo</h2>
+            <h2 style="margin-bottom: 1rem; font-size: 1.4rem;">⚙️ Panel Administrativo</h2>
             
-            <!-- Configurar WhatsApp -->
             <div class="form-group">
-                <label for="cfgWhatsapp">Número de WhatsApp Destino (Con código de país, ej: 573001234567):</label>
+                <label for="cfgWhatsapp">Número de WhatsApp Destino:</label>
                 <input type="number" id="cfgWhatsapp" placeholder="Ej: 573001234567">
             </div>
-            <button class="btn btn-dark" onclick="guardarWhatsapp()">Guardar Teléfono</button>
+            <button class="btn btn-dark" onclick="guardarConfiguracion()">Guardar Configuración</button>
             
             <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
 
-            <!-- Cambiar Contraseña -->
-            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">🔐 Seguridad: Cambiar Contraseña</h3>
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">🔐 Cambiar Contraseña</h3>
             <div class="form-group">
                 <label for="nuevaClave">Nueva Contraseña:</label>
-                <input type="password" id="nuevaClave" placeholder="Escribe tu nueva clave de acceso">
+                <input type="password" id="nuevaClave" placeholder="Escribe tu nueva clave">
             </div>
-            <button class="btn btn-dark" onclick="cambiarPassword()">Actualizar Contraseña</button>
+            <button class="btn btn-dark" onclick="guardarConfiguracion()">Actualizar Contraseña</button>
 
             <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
 
-            <!-- Agregar Productos -->
-            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">📦 Agregar Nuevo Producto a la Nube</h3>
+            <h3 style="margin-bottom: 1rem; font-size: 1.2rem;">📦 Agregar Nuevo Producto</h3>
             <div class="form-group">
-                <label for="pNombre">Nombre del Producto:</label>
-                <input type="text" id="pNombre" placeholder="Ej: Zapatillas Deportivas">
+                <label for="pNombre">Nombre:</label>
+                <input type="text" id="pNombre">
             </div>
             <div class="form-group">
                 <label for="pPrecio">Precio ($):</label>
-                <input type="number" id="pPrecio" placeholder="Ej: 45000">
+                <input type="number" id="pPrecio">
             </div>
             <div class="form-group">
-                <label for="pFoto">Seleccionar Foto (Usa tu Cámara o Galería):</label>
+                <label for="pFoto">Foto:</label>
                 <input type="file" id="pFoto" accept="image/*">
             </div>
-            <button class="btn btn-primary" id="btnSubir" onclick="agregarProducto()">Subir a Internet y Guardar</button>
+            <button class="btn btn-primary" id="btnSubir" onclick="agregarProducto()">Subir y Guardar</button>
 
             <hr style="margin: 1.5rem 0; border: 0; border-top: 1px solid #e5e5ea;">
-            <h3 style="margin-bottom: 0.5rem; font-size: 1.2rem;">🗑️ Inventario de Productos</h3>
+            <h3 style="margin-bottom: 0.5rem; font-size: 1.2rem;">🗑️ Inventario</h3>
             <div id="listaAdminProductos"></div>
         </div>
 
-        <!-- Catálogo Público -->
         <div id="catalogo" class="grid"></div>
     </div>
 
     <script>
-        // API KEY Gratuita para almacenar imágenes directamente en internet
         const IMGBB_API_KEY = "3b08e2f89f76a5eb67fe08df8b1d9bf5";
-
-        // Inicializar almacenamiento
-        let baseDatos = JSON.parse(localStorage.getItem('cloud_catalogo_db_v3')) || {
-            whatsapp: "573000000000",
-            usuario: "admin",
-            clave: "1234",
-            productos: []
-        };
-
+        let baseDatos = { whatsapp: "573000000000", usuario: "admin", clave: "1234", productos: [] };
         let isAdminAutenticado = false;
 
-        function guardarEnAlmacenamiento() {
-            localStorage.setItem('cloud_catalogo_db_v3', JSON.stringify(baseDatos));
+        async function sincronizarConNube(datosActualizados = null) {
+            try {
+                const metodo = datosActualizados ? 'POST' : 'GET';
+                const opciones = { method: metodo, headers: { 'Content-Type': 'application/json' } };
+                if (datosActualizados) opciones.body = JSON.stringify(datosActualizados);
+
+                const res = await fetch('/api/database', opciones);
+                if (res.ok) {
+                    baseDatos = await res.json();
+                    renderizarCatalogo();
+                    if(isAdminAutenticado) renderizarListaAdmin();
+                }
+            } catch (error) {
+                console.error("Error sincronizando base de datos:", error);
+            }
         }
 
-        // Cargar y mostrar los productos
         function renderizarCatalogo() {
             const container = document.getElementById('catalogo');
-            container.innerHTML = "";
-            
-            // Si la ruta del navegador genera un subenlace virtual en Vercel, redirigir visualmente a la home limpia
-            if(window.location.pathname !== "/" && window.location.pathname !== "/index.html") {
-                window.history.replaceState({}, document.title, "/");
-            }
-            
-            if(baseDatos.productos.length === 0) {
-                container.innerHTML = `<p style="text-align:center; padding:2rem; color:#8e8e93;">No hay productos en la nube. Accede al Panel Admin para subir el primero.</p>`;
-                return;
-            }
+            container.innerHTML = baseDatos.productos.length === 0 ? `<p style="text-align:center; padding:2rem; color:#8e8e93;">No hay productos en la nube.</p>` : "";
 
             baseDatos.productos.forEach(p => {
-                const mensajeWhatsapp = encodeURIComponent(`¡Hola! Me interesa comprar este producto:\n\n*Producto:* ${p.nombre}\n*Precio:* $${p.precio}\n*Foto:* ${p.foto}`);
-                const urlWhatsapp = `https://wa.me{baseDatos.whatsapp}?text=${mensajeWhatsapp}`;
-
+                const msj = encodeURIComponent(`¡Hola! Me interesa comprar:\n*Producto:* ${p.nombre}\n*Precio:* $${p.precio}\n*Foto:* ${p.foto}`);
                 container.innerHTML += `
                     <div class="card">
-                        <img src="${p.foto}" alt="${p.nombre}">
+                        <img src="${p.foto}">
                         <div class="card-body">
                             <div class="card-title">${p.nombre}</div>
                             <div class="card-price">$${Number(p.precio).toLocaleString()}</div>
-                            <a class="btn btn-primary" href="${urlWhatsapp}" target="_blank">💬 Pedir por WhatsApp</a>
+                            <a class="btn btn-primary" href="https://wa.me{baseDatos.whatsapp}?text=${msj}" target="_blank">💬 Pedir por WhatsApp</a>
                             <button class="btn btn-download" onclick="descargarImagen('${p.foto}', '${p.nombre}')">📥 Descargar Foto</button>
                         </div>
-                    </div>
-                `;
+                    </div>`;
             });
         }
 
-        // Acceso administrativo protegido
         function toggleAdmin() {
-            const panel = document.getElementById('panelAdmin');
-            
             if (!isAdminAutenticado) {
-                const userIn = prompt("Nombre de Usuario:");
-                if (userIn === null) return;
-                
-                const passIn = prompt("Contraseña de Administración:");
-                if (passIn === null) return;
-
-                if (userIn.trim() === baseDatos.usuario && passIn.trim() === baseDatos.clave) {
+                const userIn = prompt("Usuario:");
+                const passIn = prompt("Contraseña:");
+                if (userIn === baseDatos.usuario && passIn === baseDatos.clave) {
                     isAdminAutenticado = true;
-                    panel.style.display = "block";
+                    document.getElementById('panelAdmin').style.display = "block";
                     document.getElementById('cfgWhatsapp').value = baseDatos.whatsapp;
                     renderizarListaAdmin();
-                    window.scrollTo({ top: panel.offsetTop, behavior: 'smooth' });
-                } else {
-                    alert("❌ Usuario o Contraseña incorrectos");
-                }
+                } else { alert("❌ Credenciales incorrectas"); }
             } else {
+                const panel = document.getElementById('panelAdmin');
                 panel.style.display = panel.style.display === "none" ? "block" : "none";
             }
         }
 
-        function guardarWhatsapp() {
+        async function guardarConfiguracion() {
             const num = document.getElementById('cfgWhatsapp').value.trim();
-            if(!num) return alert("Escribe un número válido");
-            baseDatos.whatsapp = num;
-            guardarEnAlmacenamiento();
-            alert("✅ Número de WhatsApp actualizado");
-            renderizarCatalogo();
+            const nueva = document.getElementById('nuevaClave').value.trim();
+            
+            if(num) baseDatos.whatsapp = num;
+            if(nueva && nueva.length >= 4) { baseDatos.clave = nueva; document.getElementById('nuevaClave').value = ""; }
+            
+            await sincronizarConNube(baseDatos);
+            alert("✅ Configuración guardada en la nube con éxito");
         }
 
-        function cambiarPassword() {
-            const nueva = document.getElementById('nuevaClave').value.trim();
-            if(!nueva || nueva.length < 4) {
-                return alert("⚠️ La contraseña debe tener como mínimo 4 caracteres.");
-            }
-            baseDatos.clave = nueva;
+        async function agregarProducto() {
+            const nombre = document.getElementById('pNombre').value.trim();
+            const precio = document.getElementById('pPrecio').value.trim();
+            const fotoInput = document.getElementById('pFoto').files[0];
+            const btnSubir = document.getElementById('btnSubir');
+
+            if(!nombre || !precio || !fotoInput) return alert("⚠️ Completa los campos.");
+
+            btnSubir.innerText = "Subiendo a internet..."; btnSubir.disabled = true;
+            const formData = new FormData(); formData.append("image", fotoInput);
+
+            try {
+                const response = await fetch(`https://imgbb.com{IMGBB_API_KEY}`, { method: "POST", body: formData });
+                const resJson = await response.json();
+                if(resJson.success) {
+                    baseDatos.productos.unshift({ id: Date.now(), nombre, precio, foto: resJson.data.url });
+                    await sincronizarConNube(baseDatos);
+                    document.getElementById('pNombre').value = ""; document.getElementById('pPrecio').value = ""; document.getElementById('pFoto').value = "";
+                    alert("🎉 ¡Producto guardado globalmente!");
+                }
+            } catch (e) { alert("❌ Error de subida"); }
+            finally { btnSubir.innerText = "Subir y Guardar"; btnSubir.disabled = false; }
+        }
+
+        function renderizarListaAdmin() {
         
