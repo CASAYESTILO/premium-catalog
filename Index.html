@@ -3,23 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Catálogo Cloud Profesional</title>
-    <!-- Motores en la nube de Google Firebase -->
-    <script src="https://gstatic.com"></script>
-    <script src="https://gstatic.com"></script>
+    <title>Catálogo Cloud con Supabase</title>
+    <!-- Cargamos la librería oficial de Supabase via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root {
-            --primary: #25D366;
-            --dark: #121212;
-            --light: #f4f4f9;
-            --card-bg: #ffffff;
-            --text: #333333;
-            --accent: #0076ff;
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+        :root { --primary: #25D366; --dark: #1e1e24; --light: #f4f4f9; --card-bg: #ffffff; --text: #333333; --accent: #0076ff; }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
         body { background-color: var(--light); color: var(--text); padding-bottom: 4rem; }
-        header { background: var(--dark); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .logo { font-size: 1.3rem; font-weight: bold; }
+        header { background: var(--dark); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
         .container { max-width: 600px; margin: 0 auto; padding: 1rem; }
         .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.75rem 1rem; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 0.95rem; gap: 0.5rem; width: 100%; margin-bottom: 0.5rem; }
         .btn-primary { background: var(--primary); color: white; }
@@ -44,7 +35,7 @@
 <body>
 
     <header>
-        <div class="logo">✨ Catálogo Moderno</div>
+        <div class="logo">⚡ Catálogo Supabase</div>
         <button class="btn btn-dark" style="width: auto; margin: 0; padding: 0.5rem 1rem;" onclick="toggleAdmin()">Panel Admin</button>
     </header>
 
@@ -53,10 +44,10 @@
         <div id="panelAdmin" class="admin-panel">
             <h2>⚙️ Consola de Configuración</h2>
             <div class="form-group">
-                <label for="cfgWhatsapp">Número de WhatsApp (Con código de país, sin espacios ni el signo +):</label>
-                <input type="number" id="cfgWhatsapp" placeholder="Ej: 573001234567">
+                <label for="cfgWhatsapp">Número de WhatsApp Base:</label>
+                <input type="number" id="cfgWhatsapp">
             </div>
-            <button class="btn btn-dark" onclick="guardarWhatsapp()">Guardar Destino</button>
+            <button class="btn btn-dark" onclick="guardarWhatsapp()">Guardar WhatsApp</button>
             
             <h3>🔐 Cambiar Credenciales de Acceso</h3>
             <div class="form-group">
@@ -69,7 +60,7 @@
             </div>
             <button class="btn btn-dark" onclick="cambiarCredenciales()">Actualizar Seguridad</button>
 
-            <h3>📦 Publicar un Nuevo Artículo</h3>
+            <h3>📦 Publicar Nuevo Artículo</h3>
             <div class="form-group">
                 <label for="pNombre">Nombre del Producto:</label>
                 <input type="text" id="pNombre">
@@ -79,12 +70,12 @@
                 <input type="number" id="pPrecio">
             </div>
             <div class="form-group">
-                <label for="pFoto">Fotografía (Usa tu Cámara o Galería Móvil):</label>
+                <label for="pFoto">Fotografía (Cámara o Galería):</label>
                 <input type="file" id="pFoto" accept="image/*">
             </div>
-            <button class="btn btn-primary" id="btnSubir" onclick="agregarProducto()">Subir a Internet y Guardar</button>
+            <button class="btn btn-primary" id="btnSubir" onclick="agregarProducto()">Subir y Guardar</button>
 
-            <h3>🗑️ Inventario Publicado</h3>
+            <h3>🗑️ Inventario Activo</h3>
             <div id="listaAdminProductos"></div>
         </div>
 
@@ -94,81 +85,96 @@
     <script>
         const IMGBB_API_KEY = "3b08e2f89f76a5eb67fe08df8b1d9bf5";
         
-        // Conexión directa a base de datos distribuida en internet (Gratuita)
-        const firebaseConfig = { databaseURL: "https://firebaseio.com" };
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
+        // CONEXIÓN OBLIGATORIA A TU PROPIO SUPABASE
+        const SUPABASE_URL = "https://PEGA_AQUI_TU_PROJECT_URL.supabase.co";
+        const SUPABASE_ANON_KEY = "PEGA_AQUI_TU_ANON_PUBLIC_API_KEY";
 
-        let baseDatosLocal = { whatsapp: "573000000000", usuario: "admin", clave: "1234", productos: [] };
+        const _supabase = supabase.createClient(https://kpnjdtvimswagbbdcrqu.supabase.co);
+
+        let configLocal = { whatsapp: "573004090852", usuario: "admin", clave: "1234" };
         let isAdminAutenticado = false;
 
-        // Escuchar la nube de datos en tiempo real
-        database.ref('catalogo_seguro').on('value', (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                baseDatosLocal.whatsapp = data.whatsapp || "573000000000";
-                baseDatosLocal.usuario = data.usuario || "admin";
-                baseDatosLocal.clave = data.clave || "1234";
-                if (data.productos) {
-                    baseDatosLocal.productos = Object.keys(data.productos).map(key => ({
-                        firebaseKey: key, ...data.productos[key]
-                    })).reverse();
-                } else { baseDatosLocal.productos = []; }
-            } else {
-                database.ref('catalogo_seguro').set({ whatsapp: "573000000000", usuario: "admin", clave: "1234" });
-            }
-            renderizarCatalogo();
-            if(isAdminAutenticado) renderizarListaAdmin();
-        });
-
-        function renderizarCatalogo() {
-            const container = document.getElementById('catalogo');
-            container.innerHTML = baseDatosLocal.productos.length === 0 ? `<p style="text-align:center; padding:3rem; color:#8e8e93; width:100%;">No hay productos publicados.</p>` : "";
-
-            baseDatosLocal.productos.forEach(p => {
-                const msj = encodeURIComponent(`¡Hola! Me interesa este producto de tu catálogo:\n\n*Artículo:* ${p.nombre}\n*Precio:* $${Number(p.precio).toLocaleString()}\n*Imagen:* ${p.foto}`);
-                container.innerHTML += `
-                    <div class="card">
-                        <div class="img-container"><img src="${p.foto}" loading="lazy"></div>
-                        <div class="card-body">
-                            <div class="card-title">${p.nombre}</div>
-                            <div class="card-price">$${Number(p.precio).toLocaleString()}</div>
-                            <a class="btn btn-primary" href="https://wa.me{baseDatosLocal.whatsapp}?text=${msj}" target="_blank">💬 Pedir por WhatsApp</a>
-                            <button class="btn btn-download" onclick="descargarImagen('${p.foto}', '${p.nombre}')">📥 Descargar Foto</button>
-                        </div>
-                    </div>`;
-            });
+        async function init() {
+            // Leer configuración desde base de datos relacional
+            const { data } = await _supabase.from('tienda_config').select('*').eq('id', 1).single();
+            if(data) configLocal = data;
+            await cargarCatalogo();
         }
 
-        function toggleAdmin() {
+        async function cargarCatalogo() {
+            const { data: productos } = await _supabase.from('tienda_productos').select('*').order('id', { ascending: false });
+            const container = document.getElementById('catalogo');
+            container.innerHTML = (!productos || productos.length === 0) ? `<p style="text-align:center; padding:3rem; color:#8e8e93; width:100%;">No hay productos activos.</p>` : "";
+
+            if(productos) {
+                productos.forEach(p => {
+                    const msj = encodeURIComponent(`¡Hola! Me interesa:\n*Artículo:* ${p.nombre}\n*Precio:* $${p.precio}\n*Imagen:* ${p.foto}`);
+                    container.innerHTML += `
+                        <div class="card">
+                            <div class="img-container"><img src="${p.foto}" loading="lazy"></div>
+                            <div class="card-body">
+                                <div class="card-title">${p.nombre}</div>
+                                <div class="card-price">$${Number(p.precio).toLocaleString()}</div>
+                                <a class="btn btn-primary" href="https://wa.me{configLocal.whatsapp}?text=${msj}" target="_blank">💬 Pedir por WhatsApp</a>
+                                <button class="btn btn-download" onclick="descargarImagen('${p.foto}', '${p.nombre}')">📥 Descargar Foto</button>
+                            </div>
+                        </div>`;
+                });
+            }
+        }
+
+        async function toggleAdmin() {
             const panel = document.getElementById('panelAdmin');
             if (!isAdminAutenticado) {
-                const userIn = prompt("Usuario de administración (Por defecto: admin):");
-                const passIn = prompt("Contraseña de administración (Por defecto: 1234):");
-                if (userIn && passIn && userIn.trim() === baseDatosLocal.usuario && passIn.trim() === baseDatosLocal.clave) {
+                const userIn = prompt("Usuario:");
+                const passIn = prompt("Contraseña:");
+                if (userIn && passIn && userIn.trim() === configLocal.usuario && passIn.trim() === configLocal.clave) {
                     isAdminAutenticado = true;
                     panel.style.display = "block";
-                    document.getElementById('cfgWhatsapp').value = baseDatosLocal.whatsapp;
-                    document.getElementById('nuevoUsuario').value = baseDatosLocal.usuario;
+                    document.getElementById('cfgWhatsapp').value = configLocal.whatsapp;
+                    document.getElementById('nuevoUsuario').value = configLocal.usuario;
                     renderizarListaAdmin();
-                } else if(userIn !== null && passIn !== null) { alert("❌ Credenciales incorrectas."); }
+                } else if(userIn !== null) { alert("❌ Credenciales incorrectas."); }
             } else {
                 panel.style.display = panel.style.display === "none" ? "block" : "none";
             }
         }
 
-        function guardarWhatsapp() {
+        async function guardarWhatsapp() {
             const num = document.getElementById('cfgWhatsapp').value.trim();
-            if(!num) return alert("Ingresa un número válido.");
-            database.ref('catalogo_seguro/whatsapp').set(num);
-            alert("✅ Número de WhatsApp actualizado globalmente.");
+            if(!num) return alert("Número inválido");
+            await _supabase.from('tienda_config').update({ whatsapp: num }).eq('id', 1);
+            configLocal.whatsapp = num;
+            alert("✅ WhatsApp guardado en la nube.");
+            await cargarCatalogo();
         }
 
-        function cambiarCredenciales() {
+        async function cambiarCredenciales() {
             const user = document.getElementById('nuevoUsuario').value.trim();
             const nueva = document.getElementById('nuevaClave').value.trim();
-            if(!user) return alert("El usuario no puede estar vacío.");
-            database.ref('catalogo_seguro/usuario').set(user);
-            if(nueva && nueva.length >= 4) {
-                database.ref('catalogo_seguro/clave').set(nueva);
+            if(!user) return alert("Usuario vacío");
+            
+            let updateData = { usuario: user };
+            if(nueva && nueva.length >= 4) updateData.clave = nueva;
+
+            await _supabase.from('tienda_config').update(updateData).eq('id', 1);
+            configLocal.usuario = user;
+            if(nueva && nueva.length >= 4) configLocal.clave = nueva;
+            
+            document.getElementById('nuevaClave').value = "";
+            alert("🔒 Credenciales actualizadas en Supabase.");
+        }
+
+        async function agregarProducto() {
+            const nombre = document.getElementById('pNombre').value.trim();
+            const precio = document.getElementById('pPrecio').value.trim();
+            const fotoInput = document.getElementById('pFoto').files[0];
+            const btnSubir = document.getElementById('btnSubir');
+
+            if(!nombre || !precio || !fotoInput) return alert("⚠️ Completa todos los campos.");
+
+            btnSubir.innerText = "Subiendo imagen a la nube..."; btnSubir.disabled = true;
+            const formData = new FormData(); formData.append("image", fotoInput);
+
+            try {
         
