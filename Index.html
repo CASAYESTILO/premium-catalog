@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Catálogo Cloud con Panel Admin</title>
+    <!-- Configuración nativa para evitar Error 404 en plataformas como Vercel/Netlify -->
+    <meta name="vercel-routing" content="fallback-to-index">
     <style>
         :root {
             --primary: #25D366;
@@ -58,9 +60,9 @@
         
         <!-- Panel Admin (Oculto por defecto) -->
         <div id="panelAdmin" class="admin-panel">
-            <h2 style="margin-bottom: 1rem; font-size: 1.4rem;">⚙️ Panel Administrativo</h2>
+            <h2 style="margin-bottom: 1rem; font-size: 1.4rem;">⚙ nighttime; Panel Administrativo</h2>
             
-            <!-- WhatsApp -->
+            <!-- Configurar WhatsApp -->
             <div class="form-group">
                 <label for="cfgWhatsapp">Número de WhatsApp Destino (Con código de país, ej: 573001234567):</label>
                 <input type="number" id="cfgWhatsapp" placeholder="Ej: 573001234567">
@@ -105,11 +107,11 @@
     </div>
 
     <script>
-        // API KEY Gratuita y pública de ImgBB para almacenar imágenes en la nube de internet
+        // API KEY Gratuita para almacenar imágenes directamente en internet
         const IMGBB_API_KEY = "3b08e2f89f76a5eb67fe08df8b1d9bf5";
 
-        // Inicializar almacenamiento persistente
-        let baseDatos = JSON.parse(localStorage.getItem('cloud_catalogo_db')) || {
+        // Inicializar almacenamiento
+        let baseDatos = JSON.parse(localStorage.getItem('cloud_catalogo_db_v3')) || {
             whatsapp: "573000000000",
             usuario: "admin",
             clave: "1234",
@@ -119,12 +121,18 @@
         let isAdminAutenticado = false;
 
         function guardarEnAlmacenamiento() {
-            localStorage.setItem('cloud_catalogo_db', JSON.stringify(baseDatos));
+            localStorage.setItem('cloud_catalogo_db_v3', JSON.stringify(baseDatos));
         }
 
+        // Cargar y mostrar los productos
         function renderizarCatalogo() {
             const container = document.getElementById('catalogo');
             container.innerHTML = "";
+            
+            // Si la ruta del navegador genera un subenlace virtual en Vercel, redirigir visualmente a la home limpia
+            if(window.location.pathname !== "/" && window.location.pathname !== "/index.html") {
+                window.history.replaceState({}, document.title, "/");
+            }
             
             if(baseDatos.productos.length === 0) {
                 container.innerHTML = `<p style="text-align:center; padding:2rem; color:#8e8e93;">No hay productos en la nube. Accede al Panel Admin para subir el primero.</p>`;
@@ -160,14 +168,14 @@
                 const passIn = prompt("Contraseña de Administración:");
                 if (passIn === null) return;
 
-                if (userIn === baseDatos.usuario && passIn === baseDatos.clave) {
+                if (userIn.trim() === baseDatos.usuario && passIn.trim() === baseDatos.clave) {
                     isAdminAutenticado = true;
                     panel.style.display = "block";
                     document.getElementById('cfgWhatsapp').value = baseDatos.whatsapp;
                     renderizarListaAdmin();
                     window.scrollTo({ top: panel.offsetTop, behavior: 'smooth' });
                 } else {
-                    alert("❌ Credenciales incorrectas");
+                    alert("❌ Usuario o Contraseña incorrectos");
                 }
             } else {
                 panel.style.display = panel.style.display === "none" ? "block" : "none";
@@ -189,14 +197,4 @@
                 return alert("⚠️ La contraseña debe tener como mínimo 4 caracteres.");
             }
             baseDatos.clave = nueva;
-            guardarEnAlmacenamiento();
-            document.getElementById('nuevaClave').value = "";
-            alert("🔒 Contraseña cambiada con éxito.");
-        }
-
-        // Sube la foto directamente a los servidores de ImgBB y guarda los datos
-        async function agregarProducto() {
-            const nombre = document.getElementById('pNombre').value.trim();
-            const precio = document.getElementById('pPrecio').value.trim();
-            const fotoInput = document.getElementById('pFoto').files[0];
         
