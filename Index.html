@@ -1,214 +1,192 @@
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+import fs from 'fs';
+import { execSync } from 'child_process';
+
+// === 1. COMPROBACIÓN E INSTALACIÓN AUTOMÁTICA DE DEPENDENCIAS ===
+if (!fs.existsSync('./package.json')) {
+    const packageJson = {
+        "name": "mini-crm-whatsapp-unificado",
+        "version": "1.0.0",
+        "main": "server.js",
+        "type": "module",
+        "dependencies": {
+            "express": "^4.19.2",
+            "sqlite3": "^5.1.7",
+            "sqlite": "^5.1.1",
+            "whatsapp-web.js": "^1.23.0",
+            "qrcode-terminal": "^0.12.0",
+            "socket.io": "^4.7.5"
+        }
+    };
+    fs.writeFileSync('./package.json', JSON.stringify(packageJson, null, 2));
+    console.log('📦 Creando entorno e instalando dependencias de WhatsApp... (Espera unos segundos)');
+    execSync('npm install', { stdio: 'inherit' });
+    console.log('✅ Dependencias listas. Iniciando el servidor CRM...');
+}
+
+// === 2. INICIALIZACIÓN DEL SERVIDOR Y LA API (EXPRESS, SQLITE, WHATSAPP) ===
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+import qrcode from 'qrcode-terminal';
+import pkg from 'whatsapp-web.js';
+const { Client, LocalAuth } = pkg;
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const JWT_SECRET = 'ClaveSecretaAltamenteSeguraDeMiCatalogoMovel_2026';
-const DB_FILE = path.join(__dirname, 'database.json');
+const httpServer = createServer(app);
+const io = new Server(httpServer);
+const PORT = 3000;
 
-// Middlewares obligatorios para transferir fotos Base64 desde el celular
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json());
 
-// --- CAPA DE DATOS PERSISTENTE (Base de Datos en Servidor) ---
-function leerBaseDatos() {
-    if (!fs.existsSync(DB_FILE)) {
-        // Valores de fábrica obligatorios solicitados
-        const salt = bcrypt.genSaltSync(10);
-        const hashClave = bcrypt.hashSync('1234', salt);
-        const inicial = {
-            whatsapp: "573000000000",
-            usuario: "admin",
-            claveHash: hashClave,
-            productos: []
-        };
-        fs.writeFileSync(DB_FILE, JSON.stringify(inicial, null, 2));
-        return inicial;
-    }
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+// Iniciar Base de Datos Local SQLite
+const db = await open({ filename: './database.sqlite', driver: sqlite3.Database });
+await db.exec(`
+    CREATE TABLE IF NOT EXISTS chats (id TEXT PRIMARY KEY, name TEXT, masked_phone TEXT, assigned_to TEXT DEFAULT NULL);
+    CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT, sender TEXT, body TEXT, timestamp INTEGER);
+`);
+
+// Función crítica de seguridad para enmascarar números telefónicos en el Servidor
+function maskPhoneNumber(phone) {
+    if (!phone) return 'Número Oculto';
+    const clean = phone.replace(/\D/g, ''); 
+    if (clean.length <= 4) return '******';
+    return `+${clean.slice(0, 2)} ******${clean.slice(-2)}`;
 }
 
-function guardarBaseDatos(datos) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(datos, null, 2));
-}
+// Iniciar Cliente de WhatsApp Web
+const client = new Client({ authStrategy: new LocalAuth(), puppeteer: { args: ['--no-sandbox'] } });
 
-// Middleware de seguridad para proteger acciones del administrador
-const verificarToken = (req, res, next) => {
-    const authHeader = req.headers['authorization'];
-    if (!authHeader) return res.status(401).json({ error: 'Acceso denegado' });
+client.on('qr', (qr) => {
+    console.log('\n=== ESCANEA ESTE CÓDIGO QR CON TU WHATSAPP DE LA EMPRESA ===');
+    qrcode.generate(qr, { small: true });
+});
+
+client.on('ready', () => {
+    console.log('\n🚀 ¡CRM conectado exitosamente a tu cuenta de WhatsApp!');
+});
+
+client.on('message', async (msg) => {
+    const chatId = msg.from;
+    const chatDetails = await msg.getChat();
+    
+    await db.run(
+        `INSERT INTO chats (id, name, masked_phone) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name`,
+        chatId, chatDetails.name || 'Cliente Nuevo', maskPhoneNumber(chatId)
+    );
+    await db.run(`INSERT INTO messages (chat_id, sender, body, timestamp) VALUES (?, ?, ?, ?)`, chatId, 'client', msg.body, msg.timestamp);
+    io.emit('new_message', { chatId, body: msg.body, sender: 'client' });
+});
+
+// endpoints REST para las vendedoras
+app.get('/api/chats', async (req, res) => {
+    res.json(await db.all('SELECT id, name, masked_phone, assigned_to FROM chats'));
+});
+
+app.get('/api/chats/:id/messages', async (req, res) => {
+    res.json(await db.all('SELECT sender, body, timestamp FROM messages WHERE chat_id = ? ORDER BY timestamp ASC', req.params.id));
+});
+
+app.post('/api/messages/send', async (req, res) => {
+    const { chatId, message } = req.body;
     try {
-        const decoded = jwt.verify(authHeader, JWT_SECRET);
-        req.user = decoded;
-        next();
-    } catch (err) {
-        res.status(403).json({ error: 'Sesión inválida o expirada' });
-    }
-};
-
-// --- RUTAS DEL BACKEND (API) ---
-
-// 1. Obtener catálogo público (Cualquier cliente lo ve al instante)
-app.get('/api/catalogo', (req, res) => {
-    const db = leerBaseDatos();
-    res.json({ whatsapp: db.whatsapp, productos: db.productos });
+        await client.sendMessage(chatId, message);
+        await db.run(`INSERT INTO messages (chat_id, sender, body, timestamp) VALUES (?, ?, ?, ?)`, chatId, 'agent', message, Math.floor(Date.now() / 1000));
+        io.emit('new_message', { chatId, body: message, sender: 'agent' });
+        res.json({ success: true });
+    } catch { res.status(500).json({ error: 'Fallo al enviar' }); }
 });
 
-// 2. Login administrativo seguro con Usuario y Contraseña
-app.post('/api/login', (req, res) => {
-    const { usuario, clave } = req.body;
-    const db = leerBaseDatos();
-    
-    if (usuario !== db.usuario) return res.status(400).json({ error: 'Credenciales inválidas' });
-    
-    const claveValida = bcrypt.compareSync(clave, db.claveHash);
-    if (!claveValida) return res.status(400).json({ error: 'Credenciales inválidas' });
-    
-    const token = jwt.sign({ usuario: db.usuario }, JWT_SECRET, { expiresIn: '12h' });
-    res.json({ success: true, token, whatsapp: db.whatsapp });
+app.post('/api/chats/:id/assign', async (req, res) => {
+    await db.run('UPDATE chats SET assigned_to = ? WHERE id = ?', req.body.agentName, req.params.id);
+    res.json({ success: true });
 });
 
-// 3. Cambiar número de WhatsApp y Contraseña Administrador
-app.put('/api/config', verificarToken, (req, res) => {
-    const { whatsapp, nuevaClave } = req.body;
-    const db = leerBaseDatos();
-    
-    if (whatsapp) db.whatsapp = whatsapp.trim();
-    if (nuevaClave && nuevaClave.trim().length >= 4) {
-        db.claveHash = bcrypt.hashSync(nuevaClave.trim(), bcrypt.genSaltSync(10));
-    }
-    
-    guardarBaseDatos(db);
-    res.json({ success: true, message: 'Configuración actualizada' });
-});
-
-// 4. Agregar un nuevo producto desde la cámara o galería del móvil
-app.post('/api/productos', verificarToken, (req, res) => {
-    const { nombre, precio, foto } = req.body;
-    if (!nombre || !precio || !foto) return res.status(400).json({ error: 'Campos incompletos' });
-    
-    const db = leerBaseDatos();
-    const nuevoProducto = { id: Date.now(), nombre, precio, foto };
-    db.productos.unshift(nuevoProducto); // Colocar al principio del catálogo
-    
-    guardarBaseDatos(db);
-    res.status(201).json({ success: true, producto: nuevoProducto });
-});
-
-// 5. Eliminar producto de forma global
-app.delete('/api/productos/:id', verificarToken, (req, res) => {
-    const db = leerBaseDatos();
-    const idEliminar = parseInt(req.params.id);
-    db.productos = db.productos.filter(p => p.id !== idEliminar);
-    
-    guardarBaseDatos(db);
-    res.json({ success: true, message: 'Producto eliminado' });
-});
-
-// --- INTERFAZ DE USUARIO UNIFICADA (Frontend Móvil Integrado) ---
+// === 3. INTERFAZ VISUAL INTEGRADA (FRONTEND SEGURO) ===
 app.get('/', (req, res) => {
     res.send(`
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Catálogo Corporativo Global</title>
+    <title>Mini CRM Local Único</title>
     <style>
-        :root { --primary: #25D366; --dark: #121212; --light: #f4f4f9; --card-bg: #ffffff; }
-        * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, sans-serif; }
-        body { background-color: var(--light); padding-bottom: 3rem; }
-        header { background: var(--dark); color: white; padding: 1rem; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; }
-        .container { max-width: 600px; margin: 0 auto; padding: 1rem; }
-        .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.7rem; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; text-decoration: none; font-size: 0.95rem; width: 100%; margin-bottom: 0.5rem; gap: 0.5rem; }
-        .btn-primary { background: var(--primary); color: white; }
-        .btn-dark { background: var(--dark); color: white; }
-        .btn-download { background: #0076ff; color: white; }
-        .btn-danger { background: #ff3b30; color: white; }
-        .grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; margin-top: 1rem; }
-        .card { background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.05); border: 1px solid #e5e5ea; display: flex; flex-direction: column; }
-        .card img { width: 100%; height: 260px; object-fit: cover; }
-        .card-body { padding: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
-        .card-title { font-size: 1.2rem; font-weight: bold; }
-        .card-price { font-size: 1.3rem; font-weight: 800; color: #0076ff; }
-        .admin-panel { background: #ffffff; border-radius: 12px; padding: 1.5rem; margin-top: 1rem; display: none; border: 2px solid var(--dark); }
-        .form-group { margin-bottom: 1.2rem; }
-        .form-group label { display: block; margin-bottom: 0.4rem; font-weight: 600; font-size: 0.9rem; }
-        .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #c7c7cc; border-radius: 8px; font-size: 1rem; }
-        .admin-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem 0; border-bottom: 1px solid #e5e5ea; }
-        @media(min-width: 480px) { .grid { grid-template-columns: 1fr 1fr; } }
+        body { font-family: Arial, sans-serif; margin: 0; display: flex; height: 100vh; background: #f0f2f5; }
+        #setup { position: fixed; top:0; left:0; width:100%; height:100%; background:white; display:flex; justify-content:center; align-items:center; z-index:10; }
+        #sidebar { width: 30%; border-right: 1px solid #ccc; background: white; overflow-y: auto; }
+        #chat-window { width: 70%; display: flex; flex-direction: column; background: #efeae2; }
+        .chat-item { padding: 15px; border-bottom: 1px solid #eee; cursor: pointer; }
+        .chat-item:hover { background: #f5f6f6; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+        .msg { padding: 10px; margin: 5px 0; border-radius: 8px; max-width: 60%; word-wrap: break-word; }
+        .msg.client { background: white; align-self: flex-start; }
+        .msg.agent { background: #d9fdd3; align-self: flex-end; }
+        #input-area { padding: 15px; background: #f0f2f5; display: flex; }
+        #input-area input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 5px; outline: none; }
+        #input-area button { padding: 10px 20px; margin-left: 10px; background: #00a884; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .setup-box { padding: 30px; border: 1px solid #eee; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 8px; text-align: center; }
+        .setup-box select, .setup-box button { padding: 10px; width: 100%; margin-top: 10px; border-radius: 5px; font-size:16px; }
+        .setup-box button { background: #00a884; color: white; border: none; font-weight: bold; cursor: pointer; }
     </style>
 </head>
 <body>
-    <header>
-        <div style="font-size:1.2rem; font-weight:bold;">🚀 Catálogo Real-Time</div>
-        <button class="btn btn-dark" style="width:auto; margin:0;" onclick="controlarAccesoAdmin()">Panel Admin</button>
-    </header>
-
-    <div class="container">
-        <!-- Panel Administrativo Global -->
-        <div id="panelAdmin" class="admin-panel">
-            <h2 style="margin-bottom:1rem;">⚙️ Consola de Administración</h2>
-            <div class="form-group">
-                <label>Número de WhatsApp Base (Código de país incluido):</label>
-                <input type="number" id="cfgWhatsapp">
-            </div>
-            <div class="form-group">
-                <label>Cambiar Contraseña Administrativa:</label>
-                <input type="password" id="cfgClave" placeholder="Nueva clave (mínimo 4 caracteres)">
-            </div>
-            <button class="btn btn-dark" onclick="guardarConfiguracion()">Actualizar Panel</button>
-            
-            <hr style="margin:1.5rem 0; border:0; border-top:1px solid #e5e5ea;">
-            <h3>📦 Publicar Nuevo Artículo</h3>
-            <div class="form-group">
-                <label>Nombre:</label>
-                <input type="text" id="pNombre">
-            </div>
-            <div class="form-group">
-                <label>Precio ($):</label>
-                <input type="number" id="pPrecio">
-            </div>
-            <div class="form-group">
-                <label>Imagen (Galería o tomar Foto):</label>
-                <input type="file" id="pFoto" accept="image/*">
-            </div>
-            <button class="btn btn-primary" onclick="subirProducto()">Subir al Servidor</button>
-
-            <hr style="margin:1.5rem 0; border:0; border-top:1px solid #e5e5ea;">
-            <h3>🗑️ Inventario Activo</h3>
-            <div id="listaAdminProductos"></div>
+    <div id="setup">
+        <div class="setup-box">
+            <h2>Identificación de Vendedora</h2>
+            <p>Selecciona tu nombre para ingresar al panel:</p>
+            <select id="agent-select">
+                <option value="Vendedora 1">Vendedora 1</option>
+                <option value="Vendedora 2">Vendedora 2</option>
+                <option value="Vendedora 3">Vendedora 3</option>
+            </select>
+            <button onclick="startCRM()">Entrar al Panel</button>
         </div>
-
-        <!-- Vista del Cliente -->
-        <div id="catalogoPublico" class="grid"></div>
     </div>
-
+    <div id="sidebar"><h3 style="padding: 15px; margin: 0; background: #00a884; color: white;">Chats Recientes</h3><div id="chat-list"></div></div>
+    <div id="chat-window">
+        <div style="padding: 15px; background: #f0f2f5; font-weight: bold; border-bottom: 1px solid #ddd;" id="active-chat-title">Selecciona un chat de la lista</div>
+        <div id="messages"></div>
+        <div id="input-area"><input type="text" id="message-input" placeholder="Escribe un mensaje seguro..." onkeypress="if(event.key==='Enter') sendMessage()"><button onclick="sendMessage()">Enviar</button></div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
     <script>
-        let tokenSesion = "";
-        let whatsappGlobal = "";
-
-        async function cargarCatalogo() {
-            const res = await fetch('/api/catalogo');
-            const data = await res.json();
-            whatsappGlobal = data.whatsapp;
-            
-            const container = document.getElementById('catalogoPublico');
-            container.innerHTML = data.productos.length === 0 ? '<p style="text-align:center;color:#666;padding:2rem;">El catálogo está listo esperando artículos.</p>' : '';
-            
-            data.productos.forEach(p => {
-                const msj = encodeURIComponent('¡Hola! Me interesa este artículo:\\n\\n*Producto:* ' + p.nombre + '\\n*Precio:* $' + Number(p.precio).toLocaleString());
-                container.innerHTML += \`
-                    <div class="card">
-                        <img src="\${p.foto}">
-                        <div class="card-body">
-                            <div class="card-title">\${p.nombre}</div>
-                            <div class="card-price">\$\${Number(p.precio).toLocaleString()}</div>
-                            <a class="btn btn-primary" href="https://wa.me\${whatsappGlobal}?text=\${msj}" target="_blank">💬 Pedir por WhatsApp</a>
-                            <button class="btn btn-download" onclick="descargarFoto('\${p.foto}', '\${p.nombre}')">📥 Descargar Foto</button>
-                        </div>
-                    </div>\`;
+        const socket = io(); let currentChatId = null; let currentAgent = '';
+        function startCRM() { currentAgent = document.getElementById('agent-select').value; document.getElementById('setup').style.display = 'none'; loadChats(); }
+        async function loadChats() {
+            const res = await fetch('/api/chats'); const chats = await res.json();
+            const list = document.getElementById('chat-list'); list.innerHTML = '';
+            chats.forEach(chat => {
+                const div = document.createElement('div'); div.className = 'chat-item';
+                div.innerHTML = \`<strong>\${chat.name}</strong><br><small style="color:#666; font-size:12px;">\${chat.masked_phone}</small><br><span style="font-size:11px; font-weight:bold; color:\${chat.assigned_to ? '#007bff' : '#28a745'};">\${chat.assigned_to ? 'Asignado a: ' + chat.assigned_to : '👉 Sin asignar'}</span>\`;
+                div.onclick = () => selectChat(chat.id, chat.name, chat.masked_phone); list.appendChild(div);
             });
-            
+        }
+        async function selectChat(chatId, name, maskedPhone) {
+            currentChatId = chatId; document.getElementById('active-chat-title').innerText = \`\${name} (\${maskedPhone})\`;
+            await fetch(\`/api/chats/\${chatId}/assign\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentName: currentAgent }) });
+            const res = await fetch(\`/api/chats/\${chatId}/messages\`); const messages = await res.json();
+            const box = document.getElementById('messages'); box.innerHTML = '';
+            messages.forEach(msg => { const msgDiv = document.createElement('div'); msgDiv.className = \`msg \${msg.sender}\`; msgDiv.innerText = msg.body; box.appendChild(msgDiv); });
+            box.scrollTop = box.scrollHeight;
+        }
+        async function sendMessage() {
+            const input = document.getElementById('message-input'); if (!input.value || !currentChatId) return;
+            await fetch('/api/messages/send', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatId: currentChatId, message: input.value }) });
+            input.value = '';
+        }
+        socket.on('new_message', (data) => {
+            if (data.chatId === currentChatId) {
+                const box = document.getElementById('messages'); const msgDiv = document.createElement('div');
+                msgDiv.className = \`msg \${data.sender}\`; msgDiv.innerText = data.body; box.appendChild(msgDiv); box.scrollTop = box.scrollHeight;
+            }
+            loadChats();
+        });
+    </script>
+</body>
+</html>
+    `);
+});
+
+// Levantar el servidor
+httpServer.listen(PORT, () => {
